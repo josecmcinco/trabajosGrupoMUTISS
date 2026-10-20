@@ -11,8 +11,15 @@ output: pdf_document
 #------------------
 
 
+LIBRERÍAS  
 ```{r}
-# Cargar archivo
+library(ggplot2)
+```
+
+
+Cargar archivo
+```{r}
+
 dat_health <- read.csv("Healthcare.csv")
 
 # Ver que todo ok
@@ -25,7 +32,7 @@ summary(dat_health)
 ###------------------
 
 
-#####Conversión de la columna 'symptoms' en una columna is_symptom por síntoma
+#####1.1 Conversión de la columna 'symptoms' en una columna is_symptom por síntoma
 
 Obtener la lista de síntomas únicos
 
@@ -75,7 +82,7 @@ print(head(dat_health_processed))
 
 ```
 
-#####Aplicar One-Hot-Encoding sobre la variable 'Gender'
+#####1.2 Aplicar One-Hot-Encoding sobre la variable 'Gender'
 
 
 
@@ -91,7 +98,132 @@ print(names(dat_health_processed))
 # Mostrar las primeras filas
 print(head(dat_health_processed))
 ```
-##### Eliminar variables que no se usarán en el entrenamiento:
+#####1.3 Tratamiento de la variable resultado
+Con la intención de agrupar las enfermedades por tipos se va a proceder a hacer un mapping  
+
+```{r}
+# Obtener la lista de enfermedades distintas
+lista_enfermedades <- unique(dat_health_processed$Disease)
+
+# Mostrar las enfermedades distintas
+print(lista_enfermedades)
+
+# Mostrar la cantidad de enfermedades distintas
+print(length(lista_enfermedades))
+
+# Mostrar la cantidad de pacientes por enfermedad
+print(table(dat_health_processed$Disease))
+```
+
+1. Definir el mapping de Enfermedad-Tipo de acuerdo al CIE
+```{r}
+# Mapping como diccionario
+disease_mapping <- list(
+  "Allergy" = "Allergic_Immune",
+  "Thyroid Disorder" = "Endocrine_Metabolic",
+  "Influenza" = "Infectious",
+  "Stroke" = "Neurological",
+  "Heart Disease" = "Cardiovascular",
+  "Food Poisoning" = "Infectious",
+  "Bronchitis" = "Respiratory",
+  "COVID-19" = "Infectious",
+  "Dermatitis" = "Dermatological",
+  "Diabetes" = "Endocrine_Metabolic",
+  "Arthritis" = "Musculoskeletal",
+  "Sinusitis" = "Respiratory",
+  "Dementia" = "Neurological",
+  "Parkinson's" = "Neurological",
+  "Obesity" = "Endocrine_Metabolic",
+  "Asthma" = "Respiratory",
+  "Depression" = "Mental_Health",
+  "Gastritis" = "Digestive",
+  "Liver Disease" = "Digestive",
+  "Epilepsy" = "Neurological",
+  "IBS" = "Digestive",
+  "Tuberculosis" = "Infectious",
+  "Pneumonia" = "Respiratory",
+  "Anemia" = "Hematological",
+  "Migraine" = "Neurological",
+  "Common Cold" = "Infectious",
+  "Anxiety" = "Mental_Health",
+  "Chronic Kidney Disease" = "Renal",
+  "Ulcer" = "Digestive",
+  "Hypertension" = "Cardiovascular"
+)
+
+```
+
+
+2. Insertar el tipo de enfermedad en el modelo 
+```{r}
+# Asignar el tipo de enfermedad según el diccionario
+dat_health_processed$Disease_Type <- sapply(
+  dat_health_processed$Disease,
+  function(x) disease_mapping[[x]]
+)
+
+# Comprobar el resultado
+print(head(dat_health_processed))
+
+```
+3. Revisión de la distribución de los tipos de enfermedad
+```{r}
+# Contar pacientes por tipo de enfermedad
+conteo_tipos <- sort(
+  table(dat_health_processed$Disease_Type),
+  decreasing = TRUE
+)
+
+# Mostrar los tipos de enfermedad y sus frecuencias
+print(conteo_tipos)
+
+# Mostrar el número de tipos distintos
+print(length(conteo_tipos))
+
+```
+
+Gráfico para revisión visual
+
+```{r}
+# Convertir los resultados en un data frame para el gráfico
+df_tipos <- as.data.frame(conteo_tipos)
+colnames(df_tipos) <- c("Disease_Type", "Cantidad")
+
+# Crear gráfico de barras ordenado
+ggplot(df_tipos, aes(
+  x = reorder(Disease_Type, Cantidad),
+  y = Cantidad
+)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Distribución de los tipos de enfermedad",
+    x = "Tipo de enfermedad",
+    y = "Número de pacientes"
+  ) +
+  theme_minimal()
+
+```
+
+RESPUESTA: En base a la proporción vista, se puede asumir que, pese al desbalanceo, no es lo suficientemente alto como para
+evaluar la idea de combinar subtipos de enfermedades
+
+
+Asignar el tipo de enfermedad según el diccionario
+```{r}
+dat_health_processed$Disease_Type <- sapply(
+  dat_health_processed$Disease,
+  function(x) disease_mapping[[x]]
+)
+
+# Comprobar el resultado
+print(head(dat_health_processed))
+
+```
+
+
+
+#####1.4 Eliminar variables que no se usarán en el entrenamiento:
  - Patient_ID -> Irrelevante (El modelo no debería de usar este dato para predecir la enfermedad)
  - Gender -> Sustituida mediante OHE
  - Symtoms -> Desplegada rehecha mediante OHE
@@ -112,6 +244,12 @@ print(names(dat_health_processed))
 print(head(dat_health_processed))
 
 ```
+
+
+
+
+
+
 
 
 
