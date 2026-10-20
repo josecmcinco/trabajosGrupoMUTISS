@@ -24,9 +24,58 @@ summary(dat_health)
 ### 1. Preparación de los datos
 ###------------------
 
+
+#####Conversión de la columna 'sympthoms' en una columna is_sympthom por síntoma
+
+Obtener la lista de síntomas únicos
+
 ```{r}
-# Código
+
+lista_sintomas <- unique( #eliminamos duplicados
+  trimws( # quitamos espacios en blanco
+    unlist( # colapsamos la lista de vectores a un vector
+      strsplit(dat_health$Symptoms,",") # separa por coma
+)))
+
+print(lista_sintomas) #Mostrar la lista  para su revisión
+
+
 ```
+Obtener la lista de síntomas únicos
+
+```{r}
+
+# Crear una copia del dataset original
+dat_health_processed <- dat_health
+
+# Crear una columna por cada síntoma
+for (sintoma in lista_sintomas) {
+
+  # Limpiar el nombre del síntoma
+  sintoma <- trimws(sintoma)
+
+  # Crear el nombre de la nueva columna
+  nombre_columna <- paste0("is_", gsub(" ", "_", sintoma))
+
+  # Indicar si el paciente presenta el síntoma (1) o no (0)
+  dat_health_processed[[nombre_columna]] <- as.integer(
+    grepl(sintoma, dat_health_processed$Symptoms, fixed = TRUE)
+  )
+}
+
+```
+
+Revisión del proceso
+```{r}
+# Mostrar los nombres de todas las columnas del nuevo dataset
+print(names(dat_health_processed))
+
+# Mostrar las primeras 6 filas del nuevo dataset
+print(head(dat_health_processed))
+
+```
+
+
 
 
 ### 2. Creación de los modelos
