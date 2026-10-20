@@ -25,7 +25,7 @@ summary(dat_health)
 ###------------------
 
 
-#####Conversión de la columna 'sympthoms' en una columna is_sympthom por síntoma
+#####Conversión de la columna 'symptoms' en una columna is_symptom por síntoma
 
 Obtener la lista de síntomas únicos
 
@@ -75,6 +75,43 @@ print(head(dat_health_processed))
 
 ```
 
+#####Aplicar One-Hot-Encoding sobre la variable 'Gender'
+
+
+
+```{r}
+# Crear una columna indicadora para cada género
+dat_health_processed$is_male <- as.integer(dat_health_processed$Gender == "Male")
+dat_health_processed$is_female <- as.integer(dat_health_processed$Gender == "Female")
+# Omitimos is_other para evitar redundancia
+
+# Mostrar los nombres de las columnas
+print(names(dat_health_processed))
+
+# Mostrar las primeras filas
+print(head(dat_health_processed))
+```
+##### Eliminar variables que no se usarán en el entrenamiento:
+ - Patient_ID -> Irrelevante (El modelo no debería de usar este dato para predecir la enfermedad)
+ - Gender -> Sustituida mediante OHE
+ - Symtoms -> Desplegada rehecha mediante OHE
+ - Symptom_count -> Irrelevante (El modelo no debería de usar este dato para predecir la enfermedad)
+ - 
+
+```{r}
+# Eliminar variables que no se utilizarán durante el entrenamiento
+dat_health_processed$Patient_ID <- NULL
+dat_health_processed$Gender <- NULL
+dat_health_processed$Symptoms <- NULL
+dat_health_processed$Symptom_Count <- NULL
+
+# Comprobar los nombres de las columnas restantes
+print(names(dat_health_processed))
+
+# Mostrar las primeras filas del dataset procesado
+print(head(dat_health_processed))
+
+```
 
 
 
