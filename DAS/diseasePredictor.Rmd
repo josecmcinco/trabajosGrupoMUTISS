@@ -11,7 +11,8 @@ output: pdf_document
 #------------------
 
 
-LIBRERÍAS  
+#LIBRERÍAS
+
 ```{r}
 library(ggplot2)
 ```
@@ -35,7 +36,7 @@ summary(dat_health)
 #####1.1 Conversión de la columna 'symptoms' en una columna is_symptom por síntoma
 
 Obtener la lista de síntomas únicos
-
+###primera prueba
 ```{r}
 
 lista_sintomas <- unique( #eliminamos duplicados
@@ -81,6 +82,55 @@ print(names(dat_health_processed))
 print(head(dat_health_processed))
 
 ```
+
+
+###segunda prueba
+```{r}
+# Crear una copia del dataset original
+dat_health_processed <- dat_health
+
+# Separar los síntomas de cada paciente
+sintomas_pacientes <- lapply(
+  strsplit(dat_health$Symptoms, ","),
+  trimws
+)
+
+# Crear una columna por cada síntoma
+for (sintoma in lista_sintomas) {
+
+  nombre_columna <- paste0(
+    "is_",
+    gsub(" ", "_", sintoma)
+  )
+
+  dat_health_processed[[nombre_columna]] <- as.integer(
+    vapply(
+      sintomas_pacientes,
+      function(s) sintoma %in% s,
+      logical(1)
+    )
+  )
+}
+
+```
+
+```{r}
+# Verificar la conversión de síntomas
+columnas_sintomas <- paste0(
+  "is_",
+  gsub(" ", "_", lista_sintomas)
+)
+
+conteo_binario <- rowSums(
+  dat_health_processed[, columnas_sintomas]
+)
+
+mean(
+  conteo_binario == dat_health_processed$Symptom_Count
+) * 100
+
+```
+
 
 #####1.2 Aplicar One-Hot-Encoding sobre la variable 'Gender'
 
@@ -246,9 +296,40 @@ print(head(dat_health_processed))
 ```
 
 
+###prueba dos 
+```{r}
 
+# 2.1 Verificación del preprocesamiento
 
+# Recuperar las columnas de síntomas
+columnas_sintomas <- paste0(
+  "is_",
+  gsub(" ", "_", lista_sintomas)
+)
 
+# Recrear la codificación anterior con grepl()
+codificacion_anterior <- sapply(
+  lista_sintomas,
+  function(sintoma) {
+    as.integer(
+      grepl(sintoma, dat_health$Symptoms, fixed = TRUE)
+    )
+  }
+)
+
+# Obtener la codificación corregida
+codificacion_nueva <- as.matrix(
+  dat_health_processed[, columnas_sintomas]
+)
+
+# Contar las diferencias
+diferencias <- sum(
+  codificacion_anterior != codificacion_nueva
+)
+
+cat("Diferencias encontradas:", diferencias, "\n")
+
+```
 
 
 
@@ -257,5 +338,723 @@ print(head(dat_health_processed))
 ###------------------
 ```{r}
 # Código
+
+# 2.1 Preparación de los datos para los modelos
+
+# Convertir las variables objetivo en factores
+dat_health_processed$Disease <- factor(
+  dat_health_processed$Disease
+)
+
+dat_health_processed$Disease_Type <- factor(
+  dat_health_processed$Disease_Type
+)
+
+# Separar las variables predictoras
+# Excluimos las dos variables objetivo
+X <- dat_health_processed[
+  , !names(dat_health_processed) %in%
+    c("Disease", "Disease_Type")
+]
+
+# Objetivo A: enfermedad específica
+y_disease <- dat_health_processed$Disease
+
+# Objetivo B: tipo de enfermedad
+y_type <- dat_health_processed$Disease_Type
+
+# Comprobar las dimensiones
+cat("Variables predictoras:", ncol(X), "\n")
+cat("Pacientes:", nrow(X), "\n")
+cat("Enfermedades:", nlevels(y_disease), "\n")
+cat("Tipos:", nlevels(y_type), "\n")
+
+```
+```{r}
+
+# 2.2 División entrenamiento/prueba
+
+# Instalar una sola vez si hace falta:
+# install.packages("caret")
+
+library(caret)
+
+set.seed(123)
+
+# Estratificar por enfermedad específica
+indices_train <- createDataPartition(
+  y_disease,
+  p = 0.80,
+  list = FALSE
+)
+
+# Datos de entrenamiento
+X_train <- X[indices_train, , drop = FALSE]
+y_disease_train <- y_disease[indices_train]
+y_type_train <- y_type[indices_train]
+
+# Datos de prueba
+X_test <- X[-indices_train, , drop = FALSE]
+y_disease_test <- y_disease[-indices_train]
+y_type_test <- y_type[-indices_train]
+
+# Comprobar tamaños
+cat("Entrenamiento:", nrow(X_train), "\n")
+cat("Prueba:", nrow(X_test), "\n")
+
+# Revisar proporciones de enfermedades
+prop.table(table(y_disease_train))
+prop.table(table(y_disease_test))
+
+```   
+
+
+```{r}
+
+# 2.2.1 Visualización de la estratificación
+
+library(ggplot2)
+
+# Proporciones de entrenamiento
+prop_train <- prop.table(table(y_disease_train))
+
+# Proporciones de prueba
+prop_test <- prop.table(table(y_disease_test))
+
+# Crear dataframe para el gráfico
+df_estratificacion <- data.frame(
+  Disease = rep(names(prop_train), 2),
+  Porcentaje = c(
+    as.numeric(prop_train),
+    as.numeric(prop_test)
+  ) * 100,
+  Conjunto = rep(
+    c("Entrenamiento", "Prueba"),
+    each = length(prop_train)
+  )
+)
+
+# Gráfico comparativo
+ggplot(df_estratificacion,
+       aes(x = Disease,
+           y = Porcentaje,
+           fill = Conjunto)) +
+  geom_col(
+    position = "dodge",
+    width = 0.75
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Entrenamiento" = "#2A9D8F",
+      "Prueba" = "#E9C46A"
+    )
+  ) +
+  labs(
+    title = "Distribución de enfermedades",
+    subtitle = "Comparación entre entrenamiento y prueba",
+    x = "Enfermedad",
+    y = "Porcentaje (%)",
+    fill = "Conjunto"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(
+      angle = 65,
+      hjust = 1,
+      size = 9
+    ),
+    plot.title = element_text(
+      face = "bold",
+      size = 14
+    ),
+    legend.position = "top"
+  )
+
+
 ```
 
+
+
+```{r}
+
+# 2.2.2 Estratificación por tipo de enfermedad
+
+prop_train_type <- prop.table(table(y_type_train))
+prop_test_type <- prop.table(table(y_type_test))
+
+df_estratificacion_type <- data.frame(
+  Disease_Type = rep(names(prop_train_type), 2),
+  Porcentaje = c(
+    as.numeric(prop_train_type),
+    as.numeric(prop_test_type)
+  ) * 100,
+  Conjunto = rep(
+    c("Entrenamiento", "Prueba"),
+    each = length(prop_train_type)
+  )
+)
+
+ggplot(df_estratificacion_type,
+       aes(x = Disease_Type,
+           y = Porcentaje,
+           fill = Conjunto)) +
+  geom_col(
+    position = "dodge",
+    width = 0.75
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Entrenamiento" = "#2A9D8F",
+      "Prueba" = "#E9C46A"
+    )
+  ) +
+  labs(
+    title = "Distribución por tipo de enfermedad",
+    subtitle = "Entrenamiento vs prueba",
+    x = "Tipo de enfermedad",
+    y = "Porcentaje (%)",
+    fill = "Conjunto"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    ),
+    legend.position = "top"
+  )
+
+
+```
+Se realizó una partición estratificada del conjunto de datos, utilizando el 80 % de los registros para entrenamiento y el 20 % para prueba. La estratificación se efectuó considerando la variable Disease, con el objetivo de conservar la distribución de las enfermedades en ambos conjuntos.
+
+Los gráficos permiten comprobar que las proporciones de las clases se mantienen prácticamente constantes, lo que favorece una evaluación representativa de los modelos de clasificación.
+
+
+##Entreenamiento de arboles
+
+```{r}
+
+# 2.3 Árboles de decisión
+
+# Instalar si es necesario:
+# install.packages("rpart")
+# install.packages("rpart.plot")
+
+library(rpart)
+library(rpart.plot)
+
+# MODELO A: Disease (30 enfermedades)
+
+train_disease <- data.frame(
+  X_train,
+  Disease = y_disease_train
+)
+
+modelo_disease <- rpart(
+  Disease ~ .,
+  data = train_disease,
+  method = "class",
+  control = rpart.control(
+    cp = 0.001,
+    minsplit = 20
+  )
+)
+
+# MODELO B: Disease_Type (12 categorías)
+
+train_type <- data.frame(
+  X_train,
+  Disease_Type = y_type_train
+)
+
+modelo_type <- rpart(
+  Disease_Type ~ .,
+  data = train_type,
+  method = "class",
+  control = rpart.control(
+    cp = 0.001,
+    minsplit = 20
+  )
+)
+
+# Información de los árboles
+print(modelo_disease)
+print(modelo_type)
+
+
+```
+
+
+###Visualización de arboles
+
+```{r}
+
+# Visualizar árbol de Disease
+rpart.plot(
+  modelo_disease,
+  main = "Árbol de decisión - Disease",
+  type = 2,
+  extra = 0,
+  fallen.leaves = TRUE,
+  cex = 0.6
+)
+
+# Visualizar árbol de Disease_Type
+rpart.plot(
+  modelo_type,
+  main = "Árbol de decisión - Disease_Type",
+  type = 2,
+  extra = 0,
+  fallen.leaves = TRUE,
+  cex = 0.7
+)
+
+
+```
+
+##Evaluación de modeloes
+
+```{r}
+
+# 2.4 Evaluación inicial
+
+# Predicciones
+pred_disease <- predict(
+  modelo_disease,
+  newdata = X_test,
+  type = "class"
+)
+
+pred_type <- predict(
+  modelo_type,
+  newdata = X_test,
+  type = "class"
+)
+
+# Accuracy
+accuracy_disease <- mean(
+  pred_disease == y_disease_test
+)
+
+accuracy_type <- mean(
+  pred_type == y_type_test
+)
+
+cat("Accuracy Disease:",
+    round(accuracy_disease * 100, 2), "%\n")
+
+cat("Accuracy Disease_Type:",
+    round(accuracy_type * 100, 2), "%\n")
+
+
+```
+
+#Grafico comparativo
+```{r}
+
+# Comparación de accuracy
+
+resultados <- data.frame(
+  Modelo = c("Disease", "Disease_Type"),
+  Accuracy = c(
+    accuracy_disease,
+    accuracy_type
+  ) * 100
+)
+
+ggplot(
+  resultados,
+  aes(x = Modelo, y = Accuracy, fill = Modelo)
+) +
+  geom_col(width = 0.55) +
+  geom_text(
+    aes(label = paste0(round(Accuracy, 2), "%")),
+    vjust = -0.5,
+    size = 5
+  ) +
+  scale_y_continuous(
+    limits = c(0, 100)
+  ) +
+  labs(
+    title = "Comparación de árboles de decisión",
+    subtitle = "Predicción de enfermedad vs categoría",
+    x = "Variable objetivo",
+    y = "Accuracy (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(face = "bold")
+  )
+
+
+
+```
+
+```{r}
+
+# 2.5 Comparación con un modelo baseline
+
+# Enfermedad más frecuente en entrenamiento
+clase_disease <- names(
+  which.max(table(y_disease_train))
+)
+
+# Categoría más frecuente en entrenamiento
+clase_type <- names(
+  which.max(table(y_type_train))
+)
+
+# Predicciones constantes
+baseline_disease <- rep(
+  clase_disease,
+  length(y_disease_test)
+)
+
+baseline_type <- rep(
+  clase_type,
+  length(y_type_test)
+)
+
+# Accuracy del baseline
+acc_baseline_disease <- mean(
+  baseline_disease == as.character(y_disease_test)
+)
+
+acc_baseline_type <- mean(
+  baseline_type == as.character(y_type_test)
+)
+
+# Comparación
+comparacion <- data.frame(
+  Objetivo = c("Disease", "Disease_Type"),
+  Baseline = round(
+    c(acc_baseline_disease,
+      acc_baseline_type) * 100, 2
+  ),
+  Arbol = round(
+    c(accuracy_disease,
+      accuracy_type) * 100, 2
+  )
+)
+
+print(comparacion)
+
+
+```
+
+#Calcular la frecuencia de cada síntoma por enfermedad
+
+```{r}
+
+# 2.6 Relación entre síntomas y enfermedades
+
+library(ggplot2)
+
+# Seleccionar columnas binarias de síntomas
+columnas_sintomas <- grep(
+  "^is_",
+  names(X_train),
+  value = TRUE
+)
+
+# Excluir columnas de género
+columnas_sintomas <- setdiff(
+  columnas_sintomas,
+  c("is_male", "is_female")
+)
+
+# Crear conjunto de análisis
+datos_analisis <- data.frame(
+  X_train,
+  Disease = y_disease_train
+)
+
+# Frecuencia de cada síntoma por enfermedad
+frecuencias <- aggregate(
+  datos_analisis[, columnas_sintomas],
+  by = list(Disease = datos_analisis$Disease),
+  FUN = mean
+)
+
+# Convertir frecuencias a porcentajes
+frecuencias[, -1] <- frecuencias[, -1] * 100
+
+# Ver resultados
+head(frecuencias)
+
+
+
+```
+
+
+
+```{r}
+
+# Convertir la tabla a formato largo
+library(tidyr)
+
+frecuencias_long <- pivot_longer(
+  frecuencias,
+  cols = -Disease,
+  names_to = "Sintoma",
+  values_to = "Porcentaje"
+)
+
+# Crear mapa de calor
+ggplot(
+  frecuencias_long,
+  aes(
+    x = Sintoma,
+    y = Disease,
+    fill = Porcentaje
+  )
+) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(
+    low = "#E8F4F2",
+    high = "#147D75"
+  ) +
+  labs(
+    title = "Relación entre síntomas y enfermedades",
+    subtitle = "Frecuencia de síntomas por enfermedad",
+    x = "Síntomas",
+    y = "Enfermedades",
+    fill = "Frecuencia (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(
+      angle = 60,
+      hjust = 1,
+      size = 8
+    ),
+    axis.text.y = element_text(size = 8),
+    plot.title = element_text(face = "bold")
+  )
+
+```
+
+
+#frecuencias
+
+```{r}
+
+# 2.7 Variabilidad de síntomas entre enfermedades
+
+# Calcular rango de frecuencias para cada síntoma
+variabilidad <- data.frame(
+  Sintoma = names(frecuencias)[-1],
+  Minimo = sapply(frecuencias[-1], min),
+  Maximo = sapply(frecuencias[-1], max)
+)
+
+# Diferencia entre máximo y mínimo
+variabilidad$Diferencia <-
+  variabilidad$Maximo - variabilidad$Minimo
+
+# Ordenar de mayor a menor diferencia
+variabilidad <- variabilidad[
+  order(-variabilidad$Diferencia),
+]
+
+# Mostrar los 10 síntomas con mayor variación
+head(variabilidad, 10)
+
+
+```
+
+
+```{r}
+
+ggplot(
+  head(variabilidad, 10),
+  aes(
+    x = reorder(Sintoma, Diferencia),
+    y = Diferencia
+  )
+) +
+  geom_col(fill = "#2A9D8F") +
+  coord_flip() +
+  labs(
+    title = "Síntomas con mayor variación entre enfermedades",
+    subtitle = "Diferencia entre frecuencia máxima y mínima",
+    x = "Síntoma",
+    y = "Diferencia (puntos porcentuales)"
+  ) +
+  theme_minimal()
+
+
+```
+
+
+```{r}
+
+# 2.8 Asociación entre síntomas y enfermedades
+
+resultados_asociacion <- lapply(
+  columnas_sintomas,
+  function(sintoma) {
+
+    tabla <- table(
+      datos_analisis[[sintoma]],
+      datos_analisis$Disease
+    )
+
+    prueba <- suppressWarnings(
+      chisq.test(tabla)
+    )
+
+    # V de Cramér
+    n <- sum(tabla)
+    k <- min(dim(tabla)) - 1
+
+    v_cramer <- sqrt(
+      as.numeric(prueba$statistic) / (n * k)
+    )
+
+    data.frame(
+      Sintoma = sintoma,
+      P_value = prueba$p.value,
+      V_Cramer = v_cramer
+    )
+  }
+)
+
+resultados_asociacion <- do.call(
+  rbind,
+  resultados_asociacion
+)
+
+# Corrección por comparaciones múltiples
+resultados_asociacion$P_ajustado <- p.adjust(
+  resultados_asociacion$P_value,
+  method = "BH"
+)
+
+# Ordenar por intensidad de asociación
+resultados_asociacion <- resultados_asociacion[
+  order(-resultados_asociacion$V_Cramer),
+]
+
+head(resultados_asociacion, 10)
+
+```
+
+
+
+#probar con RF
+
+```{r}
+
+# 2.9 Random Forest
+
+# install.packages("ranger")
+library(ranger)
+
+set.seed(123)
+
+# Modelo A: Disease
+rf_disease <- ranger(
+  Disease ~ .,
+  data = train_disease,
+  num.trees = 300,
+  importance = "impurity",
+  seed = 123
+)
+
+# Modelo B: Disease_Type
+rf_type <- ranger(
+  Disease_Type ~ .,
+  data = train_type,
+  num.trees = 300,
+  importance = "impurity",
+  seed = 123
+)
+
+# Predicciones
+pred_rf_disease <- predict(
+  rf_disease,
+  data = X_test
+)$predictions
+
+pred_rf_type <- predict(
+  rf_type,
+  data = X_test
+)$predictions
+
+# Accuracy
+acc_rf_disease <- mean(
+  pred_rf_disease == y_disease_test
+)
+
+acc_rf_type <- mean(
+  pred_rf_type == y_type_test
+)
+
+cat("Random Forest Disease:",
+    round(acc_rf_disease * 100, 2), "%\n")
+
+cat("Random Forest Disease_Type:",
+    round(acc_rf_type * 100, 2), "%\n")
+```
+##comprobar información
+
+```{r}
+
+
+# 2.10 Prueba exploratoria de etiquetas permutadas
+
+library(ranger)
+
+set.seed(123)
+
+# Crear una copia del entrenamiento
+train_permutado <- train_disease
+
+# Mezclar las etiquetas de enfermedad
+train_permutado$Disease <- sample(
+  train_permutado$Disease
+)
+
+# Entrenar Random Forest con etiquetas mezcladas
+rf_permutado <- ranger(
+  Disease ~ .,
+  data = train_permutado,
+  num.trees = 300,
+  seed = 123
+)
+
+# Predecir sobre el conjunto de prueba original
+pred_permutado <- predict(
+  rf_permutado,
+  data = X_test
+)$predictions
+
+# Calcular accuracy
+acc_permutado <- mean(
+  pred_permutado == y_disease_test
+)
+
+# Comparar
+comparacion_permutacion <- data.frame(
+  Modelo = c(
+    "Baseline",
+    "Random Forest original",
+    "Random Forest permutado"
+  ),
+  Accuracy = round(
+    c(
+      acc_baseline_disease,
+      acc_rf_disease,
+      acc_permutado
+    ) * 100,
+    2
+  )
+)
+
+print(comparacion_permutacion)
+
+
+```
