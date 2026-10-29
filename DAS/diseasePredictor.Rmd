@@ -5,6 +5,14 @@ date: "2026-10-20"
 output: pdf_document
 ---
 
+
+
+#LIBRERÍAS
+
+```{r}
+library(ggplot2)
+```
+
 #------------------
 # MODELO PREDICTOR DE ENFERMEDADES
 
@@ -24,14 +32,295 @@ summary(dat_health)
 ### 1. Preparación de los datos
 ###------------------
 
+#####1.1 Crear dataset para modificar
 ```{r}
-# Código
+# Crear una copia del dataset original
+dat_health_processed <- dat_health
+```
+
+
+#####1.2 Aplicar One-Hot-Encoding sobre la variable 'Gender'
+```{r}
+# Crear una columna indicadora para cada género
+dat_health_processed$is_male <- as.integer(dat_health_processed$gender == "Male")
+
+# Omitimos is_female
+
+# Mostrar los nombres de las columnas
+print(names(dat_health_processed))
+
+# Mostrar las primeras filas
+print(head(dat_health_processed))
+```
+
+#####1.3 Eliminar variables que no se usarán en el entrenamiento:
+ - Patient_ID -> Irrelevante (El modelo no debería de usar este dato para predecir la enfermedad)
+ - Gender -> Sustituida mediante OHE
+ - Symtoms -> Desplegada rehecha mediante OHE
+ - Symptom_count -> Irrelevante (El modelo no debería de usar este dato para predecir la enfermedad)
+ - 
+
+```{r}
+# Eliminar variables que no se utilizarán durante el entrenamiento
+dat_health_processed$gender <- NULL
+
+
+# Comprobar los nombres de las columnas restantes
+print(names(dat_health_processed))
+
+# Mostrar las primeras filas del dataset procesado
+print(head(dat_health_processed))
+
 ```
 
 
 ### 2. Creación de los modelos
 ###------------------
 ```{r}
-# Código
+
+# 2.1 Preparación de los datos para los modelos
+
+# Convertir las variables objetivo en factores
+dat_health_processed$diagnosis <- factor(
+  dat_health_processed$diagnosis 
+)
+
+
+
+# Separar las variables predictoras
+# Excluimos las dos variables objetivo
+X <- dat_health_processed[
+  , !names(dat_health_processed) %in%
+    c("diagnosis")
+]
+
+# Objetivo: enfermedad específica
+y_diagnosis <- dat_health_processed$diagnosis
+
+
+
+# Comprobar las dimensiones
+cat("Variables predictoras:", ncol(X), "\n")
+cat("Pacientes:", nrow(X), "\n")
+cat("Enfermedades:", nlevels(y_diagnosis), "\n")
+
 ```
+```{r}
+
+# 2.2 División entrenamiento/prueba
+
+
+library(caret)
+
+set.seed(123)
+
+# Estratificar por enfermedad específica
+indices_train <- createDataPartition(
+  y_diagnosis,
+  p = 0.80,
+  list = FALSE
+)
+
+# Datos de entrenamiento
+X_train <- X[indices_train, , drop = FALSE]
+y_diagnosis_train <- y_diagnosis[indices_train]
+
+# Datos de prueba
+X_test <- X[-indices_train, , drop = FALSE]
+y_diagnosis_test <- y_diagnosis[-indices_train]
+
+# Comprobar tamaños
+cat("Entrenamiento:", nrow(X_train), "\n")
+cat("Prueba:", nrow(X_test), "\n")
+
+# Revisar proporciones de enfermedades
+prop.table(table(y_diagnosis_train))
+prop.table(table(y_diagnosis_test))
+
+```
+
+Se realizó una partición estratificada del conjunto de datos, utilizando el 80 % de los registros para entrenamiento y el 20 % para prueba. La estratificación se efectuó considerando la variable Disease, con el objetivo de conservar la distribución de las enfermedades en ambos conjuntos.
+
+Los gráficos permiten comprobar que las proporciones de las clases se mantienen prácticamente constantes, lo que favorece una evaluación representativa de los modelos de clasificación.
+
+```{r}
+# 2.3 Árboles de decisión
+
+# Instalar si es necesario:
+# install.packages("rpart")
+# install.packages("rpart.plot")
+
+library(rpart)
+library(rpart.plot)
+
+# MODELO A: Disease (5 enfermedades)
+
+train_diagnosis <- data.frame(
+  X_train,
+  diagnosis = y_diagnosis_train
+)
+
+modelo_diagnosis <- rpart(
+  diagnosis ~ .,
+  data = train_diagnosis,
+  method = "class",
+  control = rpart.control(
+    cp = 0.001,
+    minsplit = 20
+  )
+)
+
+# Información de los árboles
+print(modelo_diagnosis)
+
+```
+
+
+###Visualización de arboles
+
+```{r}
+
+# Visualizar árbol de Disease
+rpart.plot(
+  modelo_diagnosis,
+  main = "Árbol de decisión - Diagnosis",
+  type = 2,
+  extra = 0,
+  fallen.leaves = TRUE,
+  cex = 0.6
+)
+
+```
+
+##Evaluación de modeloes
+
+```{r}
+# 2.4 Evaluación inicial
+
+# Predicciones
+pred_diagnosis <- predict(
+  modelo_diagnosis,
+  newdata = X_test,
+  type = "class"
+)
+
+
+# Accuracy
+accuracy_diagnosis <- mean(
+  pred_diagnosis == y_diagnosis_test
+)
+
+
+cat("Accuracy Diagnosis:",
+    round(accuracy_diagnosis * 100, 2), "%\n")
+
+
+```
+
+
+```{r}
+# 2.4 Random Forest
+
+# install.packages("ranger")
+library(ranger)
+
+set.seed(123)
+
+# Modelo A: Diagnosis
+rf_diagnosis <- ranger(
+  diagnosis ~ .,
+  data = train_diagnosis,
+  num.trees = 300,
+  importance = "impurity",
+  seed = 123
+)
+
+# Predicciones
+pred_rf_diagnosis <- predict(
+  rf_diagnosis,
+  data = X_test
+)$predictions
+
+# Accuracy
+acc_rf_diagnosis <- mean(
+  pred_rf_diagnosis == y_diagnosis_test
+)
+
+cat("Random Forest Diagnosis:",
+    round(acc_rf_diagnosis * 100, 2), "%\n")
+
+
+```
+
+
+
+```{r}
+
+
+# 2.5 Ajuste de Random Forest mediante validación cruzada
+
+library(caret)
+library(ranger)
+
+set.seed(123)
+
+# Asegurar que el diagnóstico es un factor
+train_diagnosis$diagnosis <- factor(
+  train_diagnosis$diagnosis
+)
+
+# Validación cruzada estratificada
+control_rf <- trainControl(
+  method = "repeatedcv",
+  number = 5,
+  repeats = 2
+)
+
+# Parámetros que vamos a probar
+grid_rf <- expand.grid(
+  mtry = c(3, 5, 8, 12, 16),
+  splitrule = "gini",
+  min.node.size = c(5, 10, 20, 30)
+)
+
+# Ajustar el modelo
+set.seed(123)
+
+rf_tuned <- train(
+  diagnosis ~ .,
+  data = train_diagnosis,
+  method = "ranger",
+  trControl = control_rf,
+  tuneGrid = grid_rf,
+  num.trees = 500,
+  importance = "permutation",
+  metric = "Accuracy"
+)
+
+# Mejores parámetros
+print(rf_tuned$bestTune)
+
+# Resultados de validación cruzada
+print(rf_tuned)
+plot(rf_tuned)
+
+# Evaluación final sobre el conjunto de prueba
+pred_tuned <- predict(
+  rf_tuned,
+  newdata = X_test
+)
+
+confusionMatrix(
+  data = factor(
+    pred_tuned,
+    levels = levels(y_diagnosis_test)
+  ),
+  reference = y_diagnosis_test
+)
+
+
+
+
+```
+
 
